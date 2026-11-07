@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vérification ATECH</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f4f6fb;min-height:100vh;
+     display:flex;align-items:flex-start;justify-content:center;padding:16px}
+.c{background:#fff;border-radius:16px;max-width:400px;width:100%;
+   margin:24px auto;padding:28px;box-shadow:0 2px 16px rgba(0,0,0,.08)}
+.logo{color:#123A80;font-weight:700;font-size:17px;margin-bottom:24px;
+      display:flex;align-items:center;gap:8px}
+.logo svg{width:28px;height:28px}
+.badge{font-size:48px;line-height:1;margin-bottom:8px}
+.title{font-size:20px;font-weight:700;margin-bottom:20px}
+.ok{color:#1a7f37}.warn{color:#b45309}.err{color:#b91c1c}
+.rows{border-top:1px solid #f0f4f8;margin-top:4px}
+.row{display:flex;justify-content:space-between;padding:9px 0;
+     border-bottom:1px solid #f0f4f8;font-size:14px}
+.lbl{color:#666;flex-shrink:0;margin-right:12px}
+.val{font-weight:600;color:#111;text-align:right;overflow-wrap:break-word;min-width:0}
+.banner{background:#fef3c7;border:1px solid #f59e0b;border-radius:10px;
+        padding:12px 14px;margin-top:16px;font-size:13px;color:#92400e;line-height:1.5}
+.foot{text-align:center;margin-top:20px;font-size:12px;color:#aaa}
+.spin{display:flex;align-items:center;justify-content:center;gap:12px;
+      padding:32px 0;color:#666;font-size:15px}
+.spinner{width:28px;height:28px;border:3px solid #e0e0e0;
+         border-top-color:#123A80;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<div class="c" id="card">
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none">
+      <rect width="28" height="28" rx="7" fill="#123A80"/>
+      <path d="M7 14h14M14 7v14" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/>
+    </svg>
+    ATECH Commerce
+  </div>
+  <div class="spin" id="loading">
+    <div class="spinner"></div>
+    Vérification en cours…
+  </div>
+  <div id="result" style="display:none"></div>
+  <div class="foot">Vérifié par ATECH-AOB</div>
+</div>
+
+<script>
+// URL de l'Edge Function (publique, pas de secret).
+// Mise à jour si le projet Supabase change → les QR restent valides
+// car ils pointent vers cette page, pas directement vers Supabase.
+const EDGE_URL = 'https://zjowlunqrjdizviqlvfx.supabase.co/functions/v1/verify';
+
+const MONTH_FR = ['janvier','février','mars','avril','mai','juin',
+                  'juillet','août','septembre','octobre','novembre','décembre'];
+const TYPE_FR = {invoice:'Facture',quote:'Devis',proforma:'Proforma',
+                 delivery_note:'Bon de livraison',receipt:'Reçu'};
+
+function formatDate(iso) {
+  if (!iso) return '–';
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.getUTCDate() + ' ' + MONTH_FR[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+function formatGnf(n) {
+  return new Intl.NumberFormat('fr-FR').format(n) + ' GNF';
+}
+function row(lbl, val) {
+  return '<div class="row"><span class="lbl">' + lbl +
+         '</span><span class="val">' + val + '</span></div>';
+}
+
+function show(badge, cssClass, title, rows, banner) {
+  const r = document.getElementById('result');
+  document.getElementById('loading').style.display = 'none';
+  r.style.display = '';
+  r.innerHTML =
+    '<div class="badge">' + badge + '</div>' +
+    '<div class="title ' + cssClass + '">' + title + '</div>' +
+    (rows.length ? '<div class="rows">' + rows.join('') + '</div>' : '') +
+    (banner ? '<div class="banner">' + banner + '</div>' : '');
+}
+
+async function verify() {
+  const p = new URLSearchParams(window.location.search);
+  const id   = p.get('id');
+  const hmac = p.get('hmac');
+
+  if (!id || !hmac) {
+    show('❌','err','Document non reconnu',[],
+         'Ce lien ne correspond à aucun document ATECH.');
+    return;
+  }
+
+  let data;
+  try {
+    const resp = await fetch(EDGE_URL + '?id=' + encodeURIComponent(id) +
+                             '&hmac=' + encodeURIComponent(hmac),
+                             { headers: { Accept: 'application/json' } });
+    data = await resp.json();
+  } catch (_) {
+    show('⚠️','warn','Vérification momentanément indisponible',[],
+         'Une erreur réseau est survenue. Réessayez dans quelques instants.');
+    return;
+  }
+
+  if (!data.valid) {
+    show('❌','err','Document non reconnu',[],
+         'Aucun document ATECH ne correspond à ce code.');
+    return;
+  }
+
+  const rows = [
+    row('Type', TYPE_FR[data.type] || data.type),
+    row('Numéro', data.number),
+    row('Date', formatDate(data.issuedAt)),
+    row('Montant', formatGnf(data.total)),
+  ];
+
+  if (data.status === 'cancelled') {
+    show('⚠️','warn','Document ANNULÉ', rows,
+         'Ce document a été annulé et n\'a plus de valeur commerciale.');
+  } else {
+    show('✅','ok','Document authentique', rows, '');
+  }
+}
+
+verify();
+</script>
+</body>
+</html>
