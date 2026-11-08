@@ -81,10 +81,22 @@ const TYPE_FR = {
   purchase_order: 'Bon de commande', disbursement: 'Décaissement',
 };
 
-const STATUS_DOC_FR = {
-  issued: 'Émis', partially_paid: 'Partiellement payé',
-  paid: 'Payé', cancelled: 'Annulé',
-};
+function getStatusLabel(type, docStatus) {
+  if (docStatus === 'cancelled') return null;
+  if (type === 'invoice') {
+    if (docStatus === 'paid') return 'Payée';
+    if (docStatus === 'partiallyPaid') return 'Partiellement payée';
+    return 'Impayée';
+  }
+  if (type === 'receipt') return 'Payé';
+  if (type === 'purchase_order') {
+    if (docStatus === 'partiallyReceived') return 'Partiellement reçu';
+    if (docStatus === 'received') return 'Reçu';
+    if (docStatus === 'closed') return 'Clôturé';
+    return 'Émis';
+  }
+  return 'Émis';
+}
 
 const NO_PAYMENT_TYPES = new Set(['quote', 'proforma', 'purchase_order']);
 
@@ -146,13 +158,13 @@ function renderDoc(data) {
     : '';
 
   // Faits (montant GRAND, puis lignes)
-  const docStatusLabel = STATUS_DOC_FR[data.docStatus] || (cancelled ? 'Annulé' : 'Authentique');
+  const statusLbl = getStatusLabel(data.type, data.docStatus || (cancelled ? 'cancelled' : ''));
   const factsHtml = `<div class="facts">
   <div class="fact-amount">${formatGnf(totalNum)}</div>
   <div class="fact-row"><span class="fact-lbl">N°</span><span class="fact-val">${esc(data.number)}</span></div>
   <div class="fact-row"><span class="fact-lbl">Date</span><span class="fact-val">${formatDate(data.issuedAt)}</span></div>
   <div class="fact-row"><span class="fact-lbl">Type</span><span class="fact-val">${esc(TYPE_FR[data.type] || data.type)}</span></div>
-  <div class="fact-row"><span class="fact-lbl">Statut</span><span class="fact-val">${esc(docStatusLabel)}</span></div>
+  ${statusLbl != null ? `<div class="fact-row"><span class="fact-lbl">Statut</span><span class="fact-val">${esc(statusLbl)}</span></div>` : ''}
 </div>`;
 
   // Phrase de comparaison (seulement si authentique)
