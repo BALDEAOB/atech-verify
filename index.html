@@ -88,7 +88,8 @@ function getStatusLabel(type, docStatus) {
     if (docStatus === 'partiallyPaid') return 'Partiellement payée';
     return 'Impayée';
   }
-  if (type === 'receipt') return 'Payé';
+  // Un reçu prouve un paiement reçu (lot F, 16/11/2026 ; avant : « Payé »).
+  if (type === 'receipt') return 'Paiement reçu';
   if (type === 'purchase_order') {
     if (docStatus === 'partiallyReceived') return 'Partiellement reçu';
     if (docStatus === 'received') return 'Reçu';
@@ -110,6 +111,17 @@ function formatDate(iso) {
   const d = new Date(iso);
   if (isNaN(d)) return esc(iso);
   return d.getUTCDate() + ' ' + MONTH_FR[d.getUTCMonth()] + ' ' + d.getUTCFullYear();
+}
+
+// Date et heure de la vérification : « 16 novembre 2026 à 14:05 » (UTC,
+// l'heure de la Guinée).
+function formatDateTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (isNaN(d)) return '–';
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  return d.getUTCDate() + ' ' + MONTH_FR[d.getUTCMonth()] + ' ' +
+    d.getUTCFullYear() + ' à ' + hh + ':' + mm;
 }
 
 function formatGnf(n) {
@@ -157,6 +169,18 @@ function renderDoc(data) {
     ? `<div class="banner-danger">Ce document a été annulé et n'a plus de valeur commerciale.</div>`
     : '';
 
+  // Statut changé depuis l'impression (nouveaux QR seulement).
+  const ch = data.statusChange;
+  const changeBanner = ch && ch.from && ch.to
+    ? `<div class="banner-danger">Le statut a changé depuis l'impression : ${esc(ch.from)} → ${esc(ch.to)}</div>`
+    : '';
+
+  // Reçu : la facture réglée et ce qui reste à payer.
+  const fi = data.forInvoice;
+  const forInvoiceRow = fi && fi.number
+    ? `<div class="fact-row"><span class="fact-lbl">Pour</span><span class="fact-val">la facture N° ${esc(fi.number)} · reste à payer : ${formatGnf(fi.remaining)}</span></div>`
+    : '';
+
   // Faits (montant GRAND, puis lignes)
   const statusLbl = getStatusLabel(data.type, data.docStatus || (cancelled ? 'cancelled' : ''));
   const factsHtml = `<div class="facts">
@@ -165,6 +189,8 @@ function renderDoc(data) {
   <div class="fact-row"><span class="fact-lbl">Date</span><span class="fact-val">${formatDate(data.issuedAt)}</span></div>
   <div class="fact-row"><span class="fact-lbl">Type</span><span class="fact-val">${esc(TYPE_FR[data.type] || data.type)}</span></div>
   ${statusLbl != null ? `<div class="fact-row"><span class="fact-lbl">Statut</span><span class="fact-val">${esc(statusLbl)}</span></div>` : ''}
+  ${forInvoiceRow}
+  <div class="fact-row"><span class="fact-lbl">Vérifié le</span><span class="fact-val">${formatDateTime(data.verifiedAt)}</span></div>
 </div>`;
 
   // Phrase de comparaison (seulement si authentique)
@@ -200,6 +226,7 @@ function renderDoc(data) {
 ${bizHdr}
 ${statusHtml}
 ${cancelBanner}
+${changeBanner}
 ${factsHtml}
 ${compareHtml}
 ${noticeHtml}
@@ -222,6 +249,8 @@ async function verify() {
   const id   = p.get('id');
   const hmac = p.get('hmac');
   const d    = p.get('d');
+  // Statut au moment de l'impression (nouveaux QR seulement).
+  const s    = p.get('s');
 
   if (!id) {
     root.innerHTML = renderSimple('❌', 'err', 'Document non reconnu',
@@ -235,8 +264,9 @@ async function verify() {
   let url = EDGE_URL + '?id=' + encodeURIComponent(id);
   if (hmac) {
     url += '&hmac=' + encodeURIComponent(hmac);
-  } else if (d) {
-    url += '&d=' + encodeURIComponent(d);
+  } else {
+    if (d) url += '&d=' + encodeURIComponent(d);
+    if (s) url += '&s=' + encodeURIComponent(s);
   }
 
   let data;
