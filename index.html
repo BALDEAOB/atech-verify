@@ -69,8 +69,24 @@ body{font-family:system-ui,sans-serif;background:#f4f6fb;padding:12px;min-height
 <div id="root"></div>
 
 <script>
-// URL de l'Edge Function (publique, sans secret).
+// URL de l'Edge Function (publique, sans secret) : serveur principal, pour
+// tous les QR sans « srv » (tous les QR déjà imprimés).
 const EDGE_URL = 'https://zjowlunqrjdizviqlvfx.supabase.co/functions/v1/verify';
+
+// Liste FERMÉE des autres serveurs (pilote, 16/11/2026) : code court du QR
+// (&srv=…) → fonction verify de ce serveur. Jamais d'adresse prise dans le
+// lien : un code absent de cette liste = « Document non reconnu ».
+// null = serveur prévu mais pas encore ouvert.
+const SERVERS = {
+  // Projet atech-boutik-pilote (ouvert le 16/11/2026).
+  pilote: 'https://nyzmqovmgufhbbmplnqs.supabase.co/functions/v1/verify',
+};
+
+// Adresse de la fonction verify pour le code `srv` du QR ; null si inconnu.
+function edgeUrlFor(srv) {
+  if (!srv) return EDGE_URL;
+  return Object.prototype.hasOwnProperty.call(SERVERS, srv) ? SERVERS[srv] : null;
+}
 
 const MONTH_FR = ['janvier','février','mars','avril','mai','juin',
                   'juillet','août','septembre','octobre','novembre','décembre'];
@@ -258,10 +274,18 @@ async function verify() {
     return;
   }
 
+  // Serveur du document : liste fermée (aucune adresse prise dans le lien).
+  const edge = edgeUrlFor(p.get('srv'));
+  if (!edge) {
+    root.innerHTML = renderSimple('❌', 'err', 'Document non reconnu',
+      '<div class="banner">Ce lien ne correspond à aucun document ATECH.</div>');
+    return;
+  }
+
   // Construction de l'URL selon le type de QR :
   // - ancien QR (hmac) : passe hmac pour rétrocompatibilité
   // - nouveau QR : passe d (date) si disponible
-  let url = EDGE_URL + '?id=' + encodeURIComponent(id);
+  let url = edge + '?id=' + encodeURIComponent(id);
   if (hmac) {
     url += '&hmac=' + encodeURIComponent(hmac);
   } else {
