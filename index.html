@@ -194,7 +194,7 @@ function renderDoc(data) {
   // Reçu : la facture réglée et ce qui reste à payer.
   const fi = data.forInvoice;
   const forInvoiceRow = fi && fi.number
-    ? `<div class="fact-row"><span class="fact-lbl">Pour</span><span class="fact-val">la facture N° ${esc(fi.number)} · reste à payer : ${formatGnf(fi.remaining)}</span></div>`
+    ? `<div class="fact-row"><span class="fact-lbl">Pour</span><span class="fact-val">la facture N° ${esc(fi.number)} · reste à payer aujourd'hui : ${formatGnf(fi.remaining)}</span></div>`
     : '';
 
   // Faits (montant GRAND, puis lignes)
