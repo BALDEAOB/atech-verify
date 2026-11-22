@@ -252,6 +252,88 @@ ${contactHtml}
 </div>`;
 }
 
+// ── Reçu d'abonnement ATECH-AOB (paiement d'une licence ATECH Boutik) ──────────
+// Lien du QR : ?r=ATB-REC-000123&h=<sceau>. Les documents des commerçants
+// (?id=…) ne passent jamais par ici.
+
+function renderReceipt(data) {
+  const biz = data.business || {};
+  const ok = data.status === 'authentic';
+  const totalNum = typeof data.total === 'string' ? parseInt(data.total, 10) : data.total;
+  const client = data.client || {};
+  const clientLbl = [client.name, client.customerNumber ? '(' + client.customerNumber + ')' : '']
+    .filter(Boolean).join(' ');
+
+  const bizHdr = biz.name ? `
+<div class="biz-hdr">
+  <div class="biz-name">${esc(biz.name)}</div>
+</div>` : '';
+
+  const statusHtml = ok
+    ? '<div class="status-ok">✅ Document authentique</div>'
+    : '<div class="status-cancel">⚠️ Document modifié</div>';
+  const modifiedBanner = ok ? '' :
+    `<div class="banner-danger">Ce reçu ne correspond pas à celui enregistré par ATECH-AOB : il a été modifié. Ne l'acceptez pas.</div>`;
+
+  const factsHtml = `<div class="facts">
+  <div class="fact-amount">${formatGnf(totalNum)}</div>
+  <div class="fact-row"><span class="fact-lbl">N°</span><span class="fact-val">${esc(data.number)}</span></div>
+  <div class="fact-row"><span class="fact-lbl">Date</span><span class="fact-val">${formatDate(data.issuedAt)}</span></div>
+  <div class="fact-row"><span class="fact-lbl">Type</span><span class="fact-val">${esc(data.typeLabel || "Reçu d'abonnement ATECH Boutik")}</span></div>
+  <div class="fact-row"><span class="fact-lbl">Client</span><span class="fact-val">${esc(clientLbl)}</span></div>
+  ${data.planLabel ? `<div class="fact-row"><span class="fact-lbl">Abonnement</span><span class="fact-val">${esc(data.planLabel)}</span></div>` : ''}
+  <div class="fact-row"><span class="fact-lbl">Vérifié le</span><span class="fact-val">${formatDateTime(data.verifiedAt)}</span></div>
+</div>`;
+
+  const compareHtml = ok
+    ? `<div class="compare">⚠️ <strong>Comparez ces informations avec votre reçu :</strong>
+     en cas de différence, il s'agit d'un faux.</div>`
+    : '';
+
+  const lines = [];
+  if (biz.phone)   lines.push(`📞 ${esc(biz.phone)}`);
+  if (biz.address) lines.push(`📍 ${esc(biz.address)}`);
+  if (biz.email)   lines.push(`✉ ${esc(biz.email)}`);
+  if (biz.nif)     lines.push(`NIF : ${esc(biz.nif)}`);
+  if (biz.rccm)    lines.push(`RCCM : ${esc(biz.rccm)}`);
+  const contactHtml = lines.length > 0 ? `<div class="contact">
+  <div class="contact-ttl">Coordonnées d'ATECH-AOB</div>
+  ${lines.map(l => `<div class="contact-line">${l}</div>`).join('\n  ')}
+</div>` : '';
+
+  return `<div class="card">
+${bizHdr}
+${statusHtml}
+${modifiedBanner}
+${factsHtml}
+${compareHtml}
+${contactHtml}
+<div class="foot">Vérifié par ATECH-AOB</div>
+</div>`;
+}
+
+async function verifyReceipt(root, edge, r, h) {
+  let url = edge + '?r=' + encodeURIComponent(r);
+  if (h) url += '&h=' + encodeURIComponent(h);
+  let data;
+  try {
+    const resp = await fetch(url, { headers: { Accept: 'application/json' } });
+    data = await resp.json();
+  } catch (_) {
+    root.innerHTML = renderSimple('⚠️', 'warn', 'Vérification momentanément indisponible',
+      '<div class="banner">Erreur réseau. Réessayez dans quelques instants.</div>');
+    return;
+  }
+  if (data.type !== 'subscription_receipt' ||
+      (data.status !== 'authentic' && data.status !== 'modified')) {
+    root.innerHTML = renderSimple('❌', 'err', 'Document non reconnu',
+      '<div class="banner">Aucun document ATECH ne correspond à ce code.</div>');
+    return;
+  }
+  document.title = 'ATECH-AOB – Vérification';
+  root.innerHTML = renderReceipt(data);
+}
+
 // ── Vérification ──────────────────────────────────────────────────────────────
 
 async function verify() {
@@ -267,6 +349,19 @@ async function verify() {
   const d    = p.get('d');
   // Statut au moment de l'impression (nouveaux QR seulement).
   const s    = p.get('s');
+
+  // Reçu d'abonnement ATECH-AOB (sans « id ») : chemin à part.
+  const r = p.get('r');
+  if (!id && r) {
+    const receiptEdge = edgeUrlFor(p.get('srv'));
+    if (!receiptEdge) {
+      root.innerHTML = renderSimple('❌', 'err', 'Document non reconnu',
+        '<div class="banner">Ce lien ne correspond à aucun document ATECH.</div>');
+      return;
+    }
+    await verifyReceipt(root, receiptEdge, r, p.get('h'));
+    return;
+  }
 
   if (!id) {
     root.innerHTML = renderSimple('❌', 'err', 'Document non reconnu',
