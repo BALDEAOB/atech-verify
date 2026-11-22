@@ -176,9 +176,18 @@ function renderDoc(data) {
 </div>` : '';
 
   // Statut
+  // Signature recalculée par le serveur différente de celle de l'émission :
+  // le document a été modifié. (Serveur sans ce contrôle : champ absent,
+  // affichage inchangé.)
+  const modified = !cancelled && data.modified === true;
   const statusHtml = cancelled
     ? '<div class="status-cancel">⚠️ Document ANNULÉ</div>'
-    : '<div class="status-ok">✅ Document authentique</div>';
+    : modified
+      ? '<div class="status-cancel">⚠️ Document modifié</div>'
+      : '<div class="status-ok">✅ Document authentique</div>';
+  const modifiedBanner = modified
+    ? `<div class="banner-danger">Ce document ne correspond plus à celui émis par le commerce : il a été modifié. Ne l'acceptez pas.</div>`
+    : '';
 
   // Bannière annulé
   const cancelBanner = cancelled
@@ -210,7 +219,7 @@ function renderDoc(data) {
 </div>`;
 
   // Phrase de comparaison (seulement si authentique)
-  const compareHtml = cancelled ? '' :
+  const compareHtml = (cancelled || modified) ? '' :
     `<div class="compare">⚠️ <strong>Comparez ces informations avec votre document :</strong>
      en cas de différence, il s'agit d'un faux.</div>`;
 
@@ -241,7 +250,7 @@ function renderDoc(data) {
   return `<div class="card">
 ${bizHdr}
 ${statusHtml}
-${cancelBanner}
+${cancelBanner}${modifiedBanner}
 ${changeBanner}
 ${factsHtml}
 ${compareHtml}
